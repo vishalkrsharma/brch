@@ -1,0 +1,19 @@
+# Keep the published package lightweight and ship the compiled CLI only.
+
+# Local repo metadata
+.brch/
+.brchconfig
+
+# Development sources & config
+src/
+tsconfig.json
+CLAUDE.md
+
+# Dependency + build artifacts
+node_modules/
+bun.lock
+*.log
+
+# Misc tooling noise
+.DS_Store
+.cache/
