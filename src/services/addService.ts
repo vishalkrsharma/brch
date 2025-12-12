@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
-import { VCS_DIR, OBJECT_DIR } from '../utils/constants';
+import { VCS_DIR, OBJECT_DIR, INDEX_FILE } from '../utils/constants';
 
 type IndexEntry = Record<string, string>;
 
@@ -10,8 +10,6 @@ export type AddResult = {
   staged: string[];
   skipped: string[];
 };
-
-const INDEX_FILE = 'index.json';
 
 export const addFiles = async (paths: string[]): Promise<AddResult> => {
   const repoRoot = process.cwd();

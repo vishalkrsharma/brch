@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import chalk from 'chalk';
 import { stringify, parse } from 'ini';
-import { VCS_CONFIG, GLOBAL_CONFIG_PATH } from '../utils/constants';
+import { LOCAL_CONFIG_PATH, GLOBAL_CONFIG_PATH } from '../utils/constants';
 
 export const setConfig = async ({ scopeKey, value, isGlobal }: { scopeKey: string; value: string; isGlobal: boolean }): Promise<void> => {
-  const configPath = isGlobal ? GLOBAL_CONFIG_PATH : VCS_CONFIG;
+  const configPath = isGlobal ? GLOBAL_CONFIG_PATH : LOCAL_CONFIG_PATH;
 
   // Check if file exists, create it if it doesn't
   if (!existsSync(configPath)) {
@@ -34,7 +34,7 @@ export const setConfig = async ({ scopeKey, value, isGlobal }: { scopeKey: strin
 };
 
 export const readConfigFile = ({ isGlobal }: { isGlobal: boolean }) => {
-  return readFileSync(isGlobal ? GLOBAL_CONFIG_PATH : VCS_CONFIG, {
+  return readFileSync(isGlobal ? GLOBAL_CONFIG_PATH : LOCAL_CONFIG_PATH, {
     encoding: 'utf-8',
   });
 };
