@@ -1,5 +1,22 @@
 {
   "name": "brch",
+  "version": "0.0.1",
+  "description": "A simple VCS",
+  "author": "vishalkrsharma",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vishalkrsharma/brch"
+  },
+  "keywords": [
+    "vcs",
+    "version control",
+    "git",
+    "repository"
+  ],
+  "bin": {
+    "brch": "./dist/index.js"
+  },
   "module": "src/index.ts",
   "type": "module",
   "scripts": {
