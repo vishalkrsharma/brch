@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
-import { VCS_DIR, OBJECT_DIR, INDEX_FILE } from '../utils/constants';
+import { VCS_DIR, OBJECTS_DIR, INDEX_FILE, IGNORE_FILE } from '../utils/constants';
 
 type IndexEntry = Record<string, string>;
 
@@ -14,14 +14,19 @@ export type AddResult = {
 export const addFiles = async (paths: string[]): Promise<AddResult> => {
   const repoRoot = process.cwd();
   const brchPath = join(repoRoot, VCS_DIR);
+
+  console.log('BRCH PATH', brchPath);
   if (!existsSync(brchPath)) {
     throw new Error('Not a brch repository (or any of the parent directories). Run `brch init` first.');
   }
 
-  const objectDir = join(repoRoot, OBJECT_DIR);
-  await mkdir(objectDir, { recursive: true });
+  const objectsDir = join(repoRoot, OBJECTS_DIR);
 
-  const { filesToStage, missing } = await collectFiles(paths, repoRoot);
+  console.log('OBJECTS DIR', objectsDir);
+  await mkdir(objectsDir, { recursive: true });
+
+  const ignorePatterns = await loadIgnorePatterns(repoRoot);
+  const { filesToStage, missing } = await collectFiles(paths, repoRoot, ignorePatterns);
 
   const indexPath = join(brchPath, INDEX_FILE);
   const indexEntries = await readIndex(indexPath);
@@ -33,9 +38,11 @@ export const addFiles = async (paths: string[]): Promise<AddResult> => {
     const relPath = normalizeRelativePath(relative(repoRoot, absPath));
     const fileBuffer = await readFile(absPath);
     const hash = createHash('sha1').update(fileBuffer).digest('hex');
-    const objectPath = join(objectDir, hash);
+    const objectDir = join(objectsDir, hash.slice(0, 2));
+    const objectPath = join(objectDir, hash.slice(2));
 
     if (!existsSync(objectPath)) {
+      await mkdir(objectDir, { recursive: true });
       await writeFile(objectPath, fileBuffer);
     }
 
@@ -53,7 +60,11 @@ export const addFiles = async (paths: string[]): Promise<AddResult> => {
   return { staged, skipped };
 };
 
-const collectFiles = async (targets: string[], repoRoot: string): Promise<{ filesToStage: Set<string>; missing: string[] }> => {
+const collectFiles = async (
+  targets: string[],
+  repoRoot: string,
+  ignorePatterns: IgnorePattern[]
+): Promise<{ filesToStage: Set<string>; missing: string[] }> => {
   const filesToStage = new Set<string>();
   const missing: string[] = [];
 
@@ -67,9 +78,11 @@ const collectFiles = async (targets: string[], repoRoot: string): Promise<{ file
     try {
       const targetStat = await stat(absTargetPath);
       if (targetStat.isDirectory()) {
-        await walkDirectory(absTargetPath, repoRoot, filesToStage);
+        await walkDirectory(absTargetPath, repoRoot, filesToStage, ignorePatterns);
       } else if (targetStat.isFile()) {
-        filesToStage.add(absTargetPath);
+        if (!matchesIgnorePattern(absTargetPath, repoRoot, ignorePatterns)) {
+          filesToStage.add(absTargetPath);
+        }
       }
     } catch (error) {
       missing.push(target);
@@ -79,29 +92,147 @@ const collectFiles = async (targets: string[], repoRoot: string): Promise<{ file
   return { filesToStage, missing };
 };
 
-const walkDirectory = async (dir: string, repoRoot: string, collector: Set<string>): Promise<void> => {
+const walkDirectory = async (dir: string, repoRoot: string, collector: Set<string>, ignorePatterns: IgnorePattern[]): Promise<void> => {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const entryPath = join(dir, entry.name);
-    if (shouldIgnore(entryPath, repoRoot)) {
+    if (shouldIgnore(entryPath, repoRoot, ignorePatterns)) {
       continue;
     }
 
     if (entry.isDirectory()) {
-      await walkDirectory(entryPath, repoRoot, collector);
+      await walkDirectory(entryPath, repoRoot, collector, ignorePatterns);
     } else if (entry.isFile()) {
-      collector.add(entryPath);
+      if (!matchesIgnorePattern(entryPath, repoRoot, ignorePatterns)) {
+        collector.add(entryPath);
+      }
     }
   }
 };
 
-const shouldIgnore = (absPath: string, repoRoot: string): boolean => {
+type IgnorePattern = {
+  pattern: string;
+  negated: boolean;
+  isDirectory: boolean;
+};
+
+const loadIgnorePatterns = async (repoRoot: string): Promise<IgnorePattern[]> => {
+  const ignorePath = join(repoRoot, IGNORE_FILE);
+  if (!existsSync(ignorePath)) {
+    return [];
+  }
+
+  try {
+    const content = await readFile(ignorePath, 'utf-8');
+    const patterns: IgnorePattern[] = [];
+
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+
+      const negated = trimmed.startsWith('!');
+      const pattern = negated ? trimmed.slice(1) : trimmed;
+      const isDirectory = pattern.endsWith('/');
+      const normalizedPattern = isDirectory ? pattern.slice(0, -1) : pattern;
+
+      patterns.push({
+        pattern: normalizedPattern,
+        negated,
+        isDirectory,
+      });
+    }
+
+    return patterns;
+  } catch (error) {
+    return [];
+  }
+};
+
+const matchesIgnorePattern = (absPath: string, repoRoot: string, patterns: IgnorePattern[]): boolean => {
   const relPath = normalizeRelativePath(relative(repoRoot, absPath));
   if (relPath === '') {
     return false;
   }
 
-  return relPath === VCS_DIR || relPath.startsWith(`${VCS_DIR}/`);
+  let matched = false;
+  let matchedNegated = false;
+
+  for (const { pattern, negated, isDirectory } of patterns) {
+    if (matchesPattern(relPath, pattern, isDirectory)) {
+      if (negated) {
+        matchedNegated = true;
+      } else {
+        matched = true;
+      }
+    }
+  }
+
+  // Negated patterns override regular patterns
+  return matched && !matchedNegated;
+};
+
+const matchesPattern = (relPath: string, pattern: string, isDirectoryPattern: boolean): boolean => {
+  // Convert glob pattern to regex
+  // Escape special regex characters except * and ?
+  let regexPattern = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '___DOUBLE_STAR___')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/___DOUBLE_STAR___/g, '.*');
+
+  // If pattern starts with /, it matches from root
+  // Otherwise, it can match anywhere in the path
+  if (pattern.startsWith('/')) {
+    regexPattern = '^' + regexPattern.slice(1);
+  } else {
+    regexPattern = '(^|/)' + regexPattern;
+  }
+
+  // For directory patterns, match the directory itself or any parent
+  if (isDirectoryPattern) {
+    regexPattern = regexPattern + '/';
+    const regex = new RegExp(regexPattern);
+
+    // Check if the path itself matches (as a directory)
+    if (regex.test(relPath + '/')) {
+      return true;
+    }
+
+    // Check if any parent directory matches
+    const pathParts = relPath.split('/');
+    for (let i = 1; i <= pathParts.length; i++) {
+      const subPath = pathParts.slice(0, i).join('/');
+      if (regex.test(subPath + '/')) {
+        return true;
+      }
+    }
+
+    return false;
+  } else {
+    // For file patterns, match the exact path
+    regexPattern = regexPattern + '$';
+    const regex = new RegExp(regexPattern);
+    return regex.test(relPath);
+  }
+};
+
+const shouldIgnore = (absPath: string, repoRoot: string, ignorePatterns: IgnorePattern[]): boolean => {
+  const relPath = normalizeRelativePath(relative(repoRoot, absPath));
+  if (relPath === '') {
+    return false;
+  }
+
+  // Always ignore .brch directory
+  if (relPath === VCS_DIR || relPath.startsWith(`${VCS_DIR}/`)) {
+    return true;
+  }
+
+  // Check against ignore patterns
+  return matchesIgnorePattern(absPath, repoRoot, ignorePatterns);
 };
 
 const isWithinRepo = (absPath: string, repoRoot: string): boolean => {

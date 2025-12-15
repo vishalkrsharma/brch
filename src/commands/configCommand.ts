@@ -6,7 +6,6 @@ export const configCommand = new Command('config')
   .option('--global', 'Set global configuration')
   .addCommand(
     new Command('set')
-
       .argument('<scopeKey>', 'Configuration key (e.g. user.name)')
       .argument('<value>', 'Configuration value')
       .description('Set a configuration value')

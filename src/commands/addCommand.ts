@@ -8,17 +8,19 @@ export const addCommand = new Command('add')
   .action(async (paths: string[]) => {
     const targets = paths;
 
+    console.log('TARGETS', targets);
+
     try {
       const { staged, skipped } = await addFiles(targets);
 
       if (staged.length > 0) {
         console.log(chalk.green('Staged:'));
-        staged.forEach((path) => console.log(`  ${path}`));
+        staged.forEach((path) => console.log(` - ${path}`));
       }
 
       if (skipped.length > 0) {
         console.log(chalk.yellow('Skipped (unchanged or not found):'));
-        skipped.forEach((path) => console.log(`  ${path}`));
+        skipped.forEach((path) => console.log(` - ${path}`));
       }
 
       if (staged.length === 0 && skipped.length === 0) {
