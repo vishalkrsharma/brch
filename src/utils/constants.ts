@@ -4,8 +4,10 @@ export const VCS_NAME = 'brch';
 
 export const VCS_DIR = '.brch';
 
-export const OBJECTS_DIR = `${VCS_DIR}/objects`;
-export const HEAD_FILE = `${VCS_DIR}/HEAD`;
+export const OBJECTS_PATH = `${VCS_DIR}/objects`;
+
+export const HEAD_FILE = 'HEAD';
+export const HEAD_PATH = `${VCS_DIR}/HEAD`;
 
 export const GLOBAL_CONFIG_FILE = '.brchconfig';
 export const HOME_DIR = homedir();
@@ -14,6 +16,7 @@ export const LOCAL_CONFIG_FILE = 'config';
 export const LOCAL_CONFIG_PATH = `${process.cwd()}/${VCS_DIR}/${LOCAL_CONFIG_FILE}`;
 
 export const INDEX_FILE = 'index.json';
+export const INDEX_PATH = `${process.cwd()}/${VCS_DIR}/${INDEX_FILE}`;
 
 export const IGNORE_FILE = '.brchignore';
 export const IGNORE_PATH = `${process.cwd()}/${VCS_DIR}/${IGNORE_FILE}`;
