@@ -1,13 +1,13 @@
 import chalk from 'chalk';
-import { mkdirSync, writeFileSync } from 'fs';
-import { VCS_DIR, HEAD_FILE, OBJECTS_DIR } from '../utils/constants';
+import { mkdir, writeFile } from 'fs/promises';
+import { VCS_DIR, HEAD_FILE, OBJECTS_PATH } from '../utils/constants';
 
 export const initRepo = async (): Promise<void> => {
   try {
-    mkdirSync(VCS_DIR);
-    mkdirSync(OBJECTS_DIR);
+    await mkdir(VCS_DIR, { recursive: true });
+    await mkdir(OBJECTS_PATH, { recursive: true });
 
-    writeFileSync(HEAD_FILE, 'ref: refs/heads/master');
+    await writeFile(HEAD_FILE, 'ref: refs/heads/master');
 
     console.log('Initialized empty ' + chalk.green('brch') + ' repository in ' + chalk.green(process.cwd() + '/' + VCS_DIR));
   } catch (error) {

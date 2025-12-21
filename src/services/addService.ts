@@ -1,8 +1,9 @@
-import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import { VCS_DIR, OBJECTS_DIR, INDEX_FILE, IGNORE_FILE } from '../utils/constants';
+import { VCS_DIR, OBJECTS_PATH, INDEX_FILE, IGNORE_FILE } from '../utils/constants';
+import { hashContent } from '../utils/hash';
+import { getObjectPath } from '../utils/objectPath';
 
 type IndexEntry = Record<string, string>;
 
@@ -16,11 +17,13 @@ export const addFiles = async (paths: string[]): Promise<AddResult> => {
   const brchPath = join(repoRoot, VCS_DIR);
 
   console.log('BRCH PATH', brchPath);
-  if (!existsSync(brchPath)) {
+  try {
+    await access(brchPath, constants.F_OK);
+  } catch {
     throw new Error('Not a brch repository (or any of the parent directories). Run `brch init` first.');
   }
 
-  const objectsDir = join(repoRoot, OBJECTS_DIR);
+  const objectsDir = join(repoRoot, OBJECTS_PATH);
 
   console.log('OBJECTS DIR', objectsDir);
   await mkdir(objectsDir, { recursive: true });
@@ -37,11 +40,12 @@ export const addFiles = async (paths: string[]): Promise<AddResult> => {
   for (const absPath of filesToStage) {
     const relPath = normalizeRelativePath(relative(repoRoot, absPath));
     const fileBuffer = await readFile(absPath);
-    const hash = createHash('sha1').update(fileBuffer).digest('hex');
-    const objectDir = join(objectsDir, hash.slice(0, 2));
-    const objectPath = join(objectDir, hash.slice(2));
+    const hash = hashContent(fileBuffer);
+    const { objectDir, objectPath } = getObjectPath(hash, objectsDir);
 
-    if (!existsSync(objectPath)) {
+    try {
+      await access(objectPath, constants.F_OK);
+    } catch {
       await mkdir(objectDir, { recursive: true });
       await writeFile(objectPath, fileBuffer);
     }
@@ -118,7 +122,9 @@ type IgnorePattern = {
 
 const loadIgnorePatterns = async (repoRoot: string): Promise<IgnorePattern[]> => {
   const ignorePath = join(repoRoot, IGNORE_FILE);
-  if (!existsSync(ignorePath)) {
+  try {
+    await access(ignorePath, constants.F_OK);
+  } catch {
     return [];
   }
 
