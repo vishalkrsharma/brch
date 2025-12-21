@@ -4,7 +4,20 @@ import { addFiles } from '../services/addService';
 
 export const addCommand = new Command('add')
   .argument('<paths...>', 'Files or directories to add to staging (supports "." for current directory)')
-  .description('Add files to the staging area')
+  .description('Add files to the staging area for the next commit')
+  .addHelpText(
+    'after',
+    `
+Examples:
+  $ brch add file.txt              Stage a single file
+  $ brch add src/                  Stage all files in src directory
+  $ brch add .                     Stage all files in current directory
+  $ brch add file1.txt file2.js    Stage multiple files
+
+The add command stages files for commit. Files that haven't changed since the last
+commit will be skipped. Only files that exist and have been modified will be staged.
+`
+  )
   .action(async (paths: string[]) => {
     const targets = paths;
 
