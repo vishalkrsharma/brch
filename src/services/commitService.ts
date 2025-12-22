@@ -6,10 +6,10 @@ import { hashContent } from '../utils/hash';
 import path from 'path';
 import { writeFile, mkdir } from 'fs/promises';
 import { getObjectPath } from '../utils/objectPath';
+import chalk from 'chalk';
 
 export const commitChanges = async (message: string) => {
   try {
-    console.log('message', message);
     const userData = await getUserData();
     const indexEntries = await readIndex(INDEX_PATH);
 
@@ -39,15 +39,46 @@ export const commitChanges = async (message: string) => {
     console.log(`Commit successfully created: ${commitHash}`);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.log(message);
+    console.log(chalk.red('Error creating commit:'), message);
 
     process.exit(1);
   }
 };
 
+const normalizeRelativePath = (pathValue: string): string => {
+  const normalized = pathValue.split('\\').join('/');
+  // Ensure path starts with ./ for consistency (unless it's already relative or absolute)
+  if (normalized && !normalized.startsWith('./') && !normalized.startsWith('../') && !normalized.startsWith('/')) {
+    return './' + normalized;
+  }
+  return normalized;
+};
+
 const readIndex = async (indexPath: string) => {
-  const indexEntries = await fs.readFile(indexPath, 'utf-8');
-  return JSON.parse(indexEntries);
+  try {
+    const content = await fs.readFile(indexPath, 'utf-8');
+    if (!content) {
+      return [];
+    }
+    const parsed = JSON.parse(content);
+    // Handle migration from old format (object) to new format (array)
+    if (Array.isArray(parsed)) {
+      // Ensure all paths have ./ prefix
+      return parsed.map((entry) => ({
+        ...entry,
+        path: normalizeRelativePath(entry.path),
+      }));
+    } else if (typeof parsed === 'object' && parsed !== null) {
+      // Convert old format to new format
+      return Object.entries(parsed).map(([path, hash]) => ({
+        path: normalizeRelativePath(path),
+        hash: hash as string,
+      }));
+    }
+    return [];
+  } catch (error) {
+    return [];
+  }
 };
 
 const getUserData = async () => {

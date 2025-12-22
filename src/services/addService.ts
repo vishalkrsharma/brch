@@ -1,11 +1,14 @@
 import { mkdir, readdir, readFile, stat, writeFile, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import { VCS_DIR, OBJECTS_PATH, INDEX_FILE, IGNORE_FILE } from '../utils/constants';
+import { VCS_DIR, OBJECTS_PATH, INDEX_FILE, IGNORE_FILE, INDEX_PATH, VCS_PATH } from '../utils/constants';
 import { hashContent } from '../utils/hash';
 import { getObjectPath } from '../utils/objectPath';
 
-type IndexEntry = Record<string, string>;
+type IndexEntry = {
+  path: string;
+  hash: string;
+};
 
 export type AddResult = {
   staged: string[];
@@ -14,25 +17,20 @@ export type AddResult = {
 
 export const addFiles = async (paths: string[]): Promise<AddResult> => {
   const repoRoot = process.cwd();
-  const brchPath = join(repoRoot, VCS_DIR);
 
-  console.log('BRCH PATH', brchPath);
   try {
-    await access(brchPath, constants.F_OK);
+    await access(VCS_PATH, constants.F_OK);
   } catch {
     throw new Error('Not a brch repository (or any of the parent directories). Run `brch init` first.');
   }
 
   const objectsDir = join(repoRoot, OBJECTS_PATH);
 
-  console.log('OBJECTS DIR', objectsDir);
   await mkdir(objectsDir, { recursive: true });
 
   const ignorePatterns = await loadIgnorePatterns(repoRoot);
   const { filesToStage, missing } = await collectFiles(paths, repoRoot, ignorePatterns);
-
-  const indexPath = join(brchPath, INDEX_FILE);
-  const indexEntries = await readIndex(indexPath);
+  const indexEntries = await readIndex(INDEX_PATH);
 
   const staged: string[] = [];
   const skipped = [...missing];
@@ -50,16 +48,21 @@ export const addFiles = async (paths: string[]): Promise<AddResult> => {
       await writeFile(objectPath, fileBuffer);
     }
 
-    if (indexEntries[relPath] === hash) {
+    const existingEntry = indexEntries.find((entry) => entry.path === relPath);
+    if (existingEntry && existingEntry.hash === hash) {
       skipped.push(relPath);
       continue;
     }
 
-    indexEntries[relPath] = hash;
+    if (existingEntry) {
+      existingEntry.hash = hash;
+    } else {
+      indexEntries.push({ path: relPath, hash });
+    }
     staged.push(relPath);
   }
 
-  await writeFile(indexPath, JSON.stringify(indexEntries, null, 2));
+  await writeFile(INDEX_PATH, JSON.stringify(indexEntries, null, 2));
 
   return { staged, skipped };
 };
@@ -251,14 +254,37 @@ const isWithinRepo = (absPath: string, repoRoot: string): boolean => {
 };
 
 const normalizeRelativePath = (pathValue: string): string => {
-  return pathValue.split('\\').join('/');
+  const normalized = pathValue.split('\\').join('/');
+  // Ensure path starts with ./ for consistency (unless it's already relative or absolute)
+  if (normalized && !normalized.startsWith('./') && !normalized.startsWith('../') && !normalized.startsWith('/')) {
+    return './' + normalized;
+  }
+  return normalized;
 };
 
-const readIndex = async (indexPath: string): Promise<IndexEntry> => {
+const readIndex = async (indexPath: string): Promise<IndexEntry[]> => {
   try {
     const content = await readFile(indexPath, 'utf-8');
-    return content ? JSON.parse(content) : {};
+    if (!content) {
+      return [];
+    }
+    const parsed = JSON.parse(content);
+    // Handle migration from old format (object) to new format (array)
+    if (Array.isArray(parsed)) {
+      // Ensure all paths have ./ prefix
+      return parsed.map((entry) => ({
+        ...entry,
+        path: normalizeRelativePath(entry.path),
+      }));
+    } else if (typeof parsed === 'object' && parsed !== null) {
+      // Convert old format to new format
+      return Object.entries(parsed).map(([path, hash]) => ({
+        path: normalizeRelativePath(path),
+        hash: hash as string,
+      }));
+    }
+    return [];
   } catch (error) {
-    return {};
+    return [];
   }
 };

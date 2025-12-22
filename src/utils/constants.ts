@@ -3,6 +3,7 @@ import { homedir } from 'os';
 export const VCS_NAME = 'brch';
 
 export const VCS_DIR = '.brch';
+export const VCS_PATH = `${process.cwd()}/${VCS_DIR}`;
 
 export const OBJECTS_PATH = `${VCS_DIR}/objects`;
 
