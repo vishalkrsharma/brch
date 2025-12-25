@@ -1,5 +1,4 @@
 import { Command } from 'commander';
+import { log } from '../services/logService';
 
-export const logCommand = new Command('log').description('Display commit history').action(() => {
-  console.log('Log command');
-});
+export const logCommand = new Command('log').description('Display commit history').action(log);

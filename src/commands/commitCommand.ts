@@ -16,4 +16,6 @@ provide a commit message using the -m or --message option. Only staged files wil
 be included in the commit.
 `
   )
-  .action(commitChanges);
+  .action(async (options: { message: string }) => {
+    commitChanges(options.message);
+  });

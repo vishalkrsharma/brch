@@ -6,6 +6,8 @@ export const VCS_DIR = '.brch';
 export const VCS_PATH = `${process.cwd()}/${VCS_DIR}`;
 
 export const OBJECTS_PATH = `${VCS_DIR}/objects`;
+export const REFS_PATH = `${VCS_DIR}/refs`;
+export const REFS_HEAD_PATH = `${REFS_PATH}/heads`;
 
 export const HEAD_FILE = 'HEAD';
 export const HEAD_PATH = `${VCS_DIR}/HEAD`;

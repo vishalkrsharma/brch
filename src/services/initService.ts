@@ -1,11 +1,13 @@
 import chalk from 'chalk';
 import { mkdir, writeFile } from 'fs/promises';
-import { VCS_DIR, OBJECTS_PATH, HEAD_PATH } from '../utils/constants';
+import { VCS_DIR, OBJECTS_PATH, HEAD_PATH, REFS_PATH } from '../utils/constants';
 
 export const initRepo = async (): Promise<void> => {
   try {
     await mkdir(VCS_DIR, { recursive: true });
     await mkdir(OBJECTS_PATH, { recursive: true });
+    await mkdir(REFS_PATH, { recursive: true });
+    await mkdir(REFS_PATH + '/heads', { recursive: true });
 
     await writeFile(HEAD_PATH, 'ref: refs/heads/master');
 

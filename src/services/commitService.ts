@@ -1,12 +1,13 @@
 import fs from 'fs/promises';
 
-import { GLOBAL_CONFIG_PATH, HEAD_PATH, INDEX_PATH, LOCAL_CONFIG_PATH, OBJECTS_PATH } from '../utils/constants';
+import { GLOBAL_CONFIG_PATH, HEAD_PATH, INDEX_PATH, LOCAL_CONFIG_PATH, OBJECTS_PATH, REFS_HEAD_PATH } from '../utils/constants';
 import { parse } from 'ini';
 import { hashContent } from '../utils/hash';
 import path from 'path';
 import { writeFile, mkdir } from 'fs/promises';
 import { getObjectPath } from '../utils/objectPath';
 import chalk from 'chalk';
+import { getCurrentHead, getCurrentBranchName } from '../utils/head';
 
 export const commitChanges = async (message: string) => {
   try {
@@ -14,12 +15,13 @@ export const commitChanges = async (message: string) => {
     const indexEntries = await readIndex(INDEX_PATH);
 
     const parentCommit = await getCurrentHead();
+    let branchName = await getCurrentBranchName();
 
     const commitData = {
       timeStamp: new Date().toISOString(),
       message,
       files: indexEntries,
-      parent: parentCommit,
+      parent: parentCommit || '',
       author: {
         name: userData.user.name,
         email: userData.user.email,
@@ -33,7 +35,18 @@ export const commitChanges = async (message: string) => {
 
     await mkdir(objectDir, { recursive: true });
     await writeFile(objectPath, JSON.stringify(commitData));
-    await writeFile(HEAD_PATH, commitHash);
+
+    // If we have a branch name, update/create the branch ref file
+    if (!branchName) {
+      // No branch name found, create default branch (master) and update HEAD
+      branchName = 'master';
+      await writeFile(HEAD_PATH, `ref: refs/heads/${branchName}`);
+    }
+
+    const branchRefPath = path.join(repoRoot, REFS_HEAD_PATH, branchName);
+    await mkdir(path.dirname(branchRefPath), { recursive: true });
+    await writeFile(branchRefPath, commitHash);
+
     await writeFile(INDEX_PATH, JSON.stringify([]));
 
     console.log(`Commit successfully created: ${commitHash}`);
@@ -103,12 +116,4 @@ const getUserData = async () => {
   }
 
   throw new Error('No config file found');
-};
-
-const getCurrentHead = async () => {
-  try {
-    return await fs.readFile(HEAD_PATH, 'utf-8');
-  } catch (error) {
-    return null;
-  }
 };
