@@ -1,19 +1,32 @@
 # brch
 
-A simple Version Control System (VCS) built with Node.js and TypeScript.
+A simple Version Control System (VCS) built with Bun and TypeScript.
 
 ## Description
 
-`brch` is a lightweight version control system that provides essential VCS functionality including repository initialization, file staging, and configuration management. It stores objects using SHA1 hashing and maintains a staging index for tracking changes.
+`brch` is a lightweight version control system that provides essential VCS functionality including repository initialization, file staging, commits, history tracking, and diff visualization. It stores objects using SHA1 hashing and maintains a staging index for tracking changes.
 
 ## Installation
 
-```bash
-# Install globally
-npm install -g brch
+### Prerequisites
 
-# Or use locally
-npm install
+- [Bun](https://bun.sh/) runtime
+
+### Install from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/vishalkrsharma/brch.git
+cd brch
+
+# Install dependencies
+bun install
+
+# Build the project
+bun run build
+
+# Link globally (optional)
+npm link
 ```
 
 ## Usage
@@ -50,6 +63,57 @@ The command will:
 - Store file objects in `.brch/objects/` using SHA1 hashing
 - Update the staging index
 
+### Commit Changes
+
+Commit staged changes to the repository:
+
+```bash
+# Commit with a message
+brch commit -m "Add new feature"
+
+# Commit with a longer message
+brch commit -m "Fix bug in authentication" -m "Updated login validation logic"
+```
+
+### View Status
+
+Check the status of your working directory:
+
+```bash
+brch status
+```
+
+This shows:
+
+- Changes staged for commit
+- Modified files not yet staged
+- Untracked files and directories
+
+### View Commit History
+
+View the commit history of the current branch:
+
+```bash
+brch log
+```
+
+Displays commits with:
+
+- Commit hash
+- Author information
+- Timestamp
+- Commit message
+
+### View Changes
+
+See differences between your working directory and the last commit:
+
+```bash
+brch diff
+```
+
+Shows a colored unified diff of all modified files.
+
 ### Configuration
 
 Manage repository or global configuration:
@@ -61,6 +125,7 @@ brch config set user.email "your.email@example.com"
 
 # Set global configuration
 brch config set --global user.name "Your Name"
+brch config set --global user.email "your.email@example.com"
 ```
 
 Configuration is stored in `.brchconfig` (local) or `~/.brchconfig` (global) using INI format.
@@ -69,8 +134,30 @@ Configuration is stored in `.brchconfig` (local) or `~/.brchconfig` (global) usi
 
 - `brch init` - Initialize a new repository
 - `brch add <paths...>` - Add files to the staging area
+- `brch commit -m <message>` - Commit staged changes
+- `brch status` - Show the working tree status
+- `brch log` - Show commit history
+- `brch diff` - Show changes between working directory and last commit
 - `brch config set <scopeKey> <value>` - Set configuration value
   - `--global` - Set global configuration instead of local
+
+## Ignore Files
+
+Create a `.brchignore` file in your repository root to exclude files and directories from version control:
+
+```
+# Example .brchignore
+node_modules/
+*.log
+dist/
+.env
+```
+
+Supports patterns:
+
+- Exact matches: `node_modules`
+- Glob patterns: `*.log`
+- Directory patterns: `dist/`
 
 ## Development
 
