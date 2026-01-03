@@ -22,4 +22,4 @@ export const INDEX_FILE = 'index.json';
 export const INDEX_PATH = `${process.cwd()}/${VCS_DIR}/${INDEX_FILE}`;
 
 export const IGNORE_FILE = '.brchignore';
-export const IGNORE_PATH = `${process.cwd()}/${VCS_DIR}/${IGNORE_FILE}`;
+export const IGNORE_PATH = `${process.cwd()}/${IGNORE_FILE}`;
