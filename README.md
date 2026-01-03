@@ -1,6 +1,6 @@
 # brch
 
-A simple Version Control System (VCS) built with Bun and TypeScript.
+A simple Version Control System (VCS) built with TypeScript.
 
 ## Description
 
@@ -8,25 +8,16 @@ A simple Version Control System (VCS) built with Bun and TypeScript.
 
 ## Installation
 
-### Prerequisites
-
-- [Bun](https://bun.sh/) runtime
-
-### Install from Source
+Install globally via npm:
 
 ```bash
-# Clone the repository
-git clone https://github.com/vishalkrsharma/brch.git
-cd brch
+npm install -g brch
+```
 
-# Install dependencies
-bun install
+Or use with npx without installing:
 
-# Build the project
-bun run build
-
-# Link globally (optional)
-npm link
+```bash
+npx brch <command>
 ```
 
 ## Usage
