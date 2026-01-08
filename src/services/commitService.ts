@@ -47,8 +47,6 @@ export const commitChanges = async (message: string) => {
     await mkdir(path.dirname(branchRefPath), { recursive: true });
     await writeFile(branchRefPath, commitHash);
 
-    await writeFile(INDEX_PATH, JSON.stringify([]));
-
     console.log(`Commit successfully created: ${commitHash}`);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

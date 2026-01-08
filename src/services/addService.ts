@@ -236,7 +236,8 @@ const shouldIgnore = (absPath: string, repoRoot: string, ignorePatterns: IgnoreP
   }
 
   // Always ignore .brch directory
-  if (relPath === VCS_DIR || relPath.startsWith(`${VCS_DIR}/`)) {
+  if (relPath === VCS_DIR || relPath.startsWith(`${VCS_DIR}/`) ||
+    relPath === `./${VCS_DIR}` || relPath.startsWith(`./${VCS_DIR}/`)) {
     return true;
   }
 

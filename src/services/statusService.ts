@@ -45,16 +45,13 @@ const getTrackedFiles = async (commitHash: string | null): Promise<Map<string, s
     const commitPath = path.join(OBJECTS_PATH, commitHash.substring(0, 2), commitHash.substring(2));
     const commitData = JSON.parse(await fs.readFile(commitPath, 'utf-8'));
 
-    if (commitData.tree) {
-      const treePath = path.join(OBJECTS_PATH, commitData.tree.substring(0, 2), commitData.tree.substring(2));
-      const treeData = JSON.parse(await fs.readFile(treePath, 'utf-8'));
-
-      for (const [file, hash] of Object.entries(treeData)) {
-        trackedFiles.set(file, hash as string);
+    if (commitData.files && Array.isArray(commitData.files)) {
+      for (const entry of commitData.files) {
+        trackedFiles.set(entry.path, entry.hash);
       }
     }
   } catch (error) {
-    // Tree data not found, return empty
+    // Commit data not found or invalid format
   }
 
   return trackedFiles;
@@ -73,7 +70,30 @@ const readIndex = async (): Promise<{ path: string; hash: string }[]> => {
   }
 };
 
-const stripLeadingDot = (p: string) => (p.startsWith('./') ? p.slice(2) : p);
+const normalizeRelativePath = (pathValue: string): string => {
+  const normalized = pathValue.split('\\').join('/');
+  if (normalized && !normalized.startsWith('./') && !normalized.startsWith('../') && !normalized.startsWith('/')) {
+    return './' + normalized;
+  }
+  return normalized;
+};
+
+const walk = async (dir: string, repoRoot: string, ignorePatterns: string[]): Promise<string[]> => {
+  let files: string[] = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const res = path.resolve(dir, entry.name);
+    if (entry.name === VCS_DIR || shouldIgnore(entry.name, ignorePatterns)) continue;
+
+    if (entry.isDirectory()) {
+      files = files.concat(await walk(res, repoRoot, ignorePatterns));
+    } else {
+      files.push(normalizeRelativePath(path.relative(repoRoot, res)));
+    }
+  }
+  return files;
+};
 
 export const status = async () => {
   try {
@@ -82,82 +102,107 @@ export const status = async () => {
     const trackedFiles = await getTrackedFiles(currentHead);
     const ignorePatterns = await getIgnorePatterns();
     const indexEntries = await readIndex();
-    const stagedSet = new Set(indexEntries.map((e) => stripLeadingDot(e.path)));
+
+    const indexMap = new Map<string, string>();
+    for (const entry of indexEntries) {
+      indexMap.set(entry.path, entry.hash);
+    }
 
     console.log(`On branch ${chalk.cyan(currentBranch || 'detached HEAD')}`);
 
-    const workdir = process.cwd();
-    const entries = await fs.readdir(workdir, { withFileTypes: true });
+    const repoRoot = process.cwd();
+    const allFiles = await walk(repoRoot, repoRoot, ignorePatterns);
 
-    const stagedFiles: string[] = [];
+    const stagedAdditions: string[] = [];
+    const stagedModifications: string[] = [];
+    const stagedDeletions: string[] = [];
     const modifiedFiles: string[] = [];
-    const untrackedItems: { name: string; type: 'file' | 'directory' }[] = [];
+    const deletedFiles: string[] = [];
+    const untrackedFiles: string[] = [];
 
-    for (const entry of entries) {
-      // Skip VCS directory
-      if (entry.name === VCS_DIR) {
-        continue;
-      }
+    // All known paths from worktree, index, and HEAD
+    const allKnownPaths = new Set([
+      ...allFiles,
+      ...indexMap.keys(),
+      ...trackedFiles.keys()
+    ]);
 
-      // Skip ignored files and folders
-      if (shouldIgnore(entry.name, ignorePatterns)) {
-        continue;
-      }
+    const worktreeSet = new Set(allFiles);
 
-      if (entry.isFile()) {
-        // If file is staged, show it under staged and skip other checks
-        if (stagedSet.has(entry.name)) {
-          stagedFiles.push(entry.name);
-          continue;
+    for (const relPath of allKnownPaths) {
+      const indexHash = indexMap.get(relPath);
+      const headHash = trackedFiles.get(relPath);
+      const isWorktree = worktreeSet.has(relPath);
+
+      // 1. Check for staged changes (Index vs HEAD)
+      if (indexHash !== headHash) {
+        if (!headHash && indexHash) {
+          stagedAdditions.push(relPath);
+        } else if (headHash && !indexHash) {
+          stagedDeletions.push(relPath);
+        } else if (headHash && indexHash && headHash !== indexHash) {
+          stagedModifications.push(relPath);
         }
-        const filePath = path.join(workdir, entry.name);
-        const fileHash = hashContent(filePath);
-        const trackedHash = trackedFiles.get(entry.name);
+      }
 
-        if (trackedHash) {
-          if (fileHash !== trackedHash) {
-            modifiedFiles.push(entry.name);
+      // 2. Check for unstaged changes (Worktree vs Index/HEAD)
+      if (isWorktree) {
+        const fileBuffer = await fs.readFile(path.join(repoRoot, relPath));
+        const fileHash = hashContent(fileBuffer);
+
+        const baseHash = indexHash || headHash;
+        if (baseHash) {
+          if (fileHash !== indexHash && indexHash) {
+            modifiedFiles.push(relPath);
+          } else if (fileHash !== headHash && !indexHash) {
+            // Tracked in HEAD but not in index (and not staged for deletion)
+            modifiedFiles.push(relPath);
           }
         } else {
-          untrackedItems.push({ name: entry.name, type: 'file' });
+          untrackedFiles.push(relPath);
         }
-      } else if (entry.isDirectory()) {
-        untrackedItems.push({ name: entry.name, type: 'directory' });
+      } else {
+        // Missing from worktree
+        if (indexHash || headHash) {
+          // If it's in index but not worktree, and we haven't staged its deletion
+          if (indexHash) {
+            deletedFiles.push(relPath);
+          }
+        }
       }
     }
 
-    if (stagedFiles.length > 0) {
+    if (stagedAdditions.length > 0 || stagedModifications.length > 0 || stagedDeletions.length > 0) {
       console.log(`\n${chalk.green('Changes to be committed:')}`);
       console.log(`  (use "${chalk.cyan('brch reset')}" to unstage)`);
-      for (const file of stagedFiles) {
-        console.log(`\t${chalk.green('new file:')} ${file}`);
-      }
+      for (const file of stagedAdditions) console.log(`\t${chalk.green('new file:')}   ${file}`);
+      for (const file of stagedModifications) console.log(`\t${chalk.green('modified:')}   ${file}`);
+      for (const file of stagedDeletions) console.log(`\t${chalk.green('deleted:')}    ${file}`);
     }
 
-    if (modifiedFiles.length > 0) {
+    if (modifiedFiles.length > 0 || deletedFiles.length > 0) {
       console.log(`\n${chalk.red('Changes not staged for commit:')}`);
       console.log(`  (use "${chalk.cyan('brch add')}" to stage changes)`);
-      for (const file of modifiedFiles) {
-        console.log(`\t${chalk.red('modified:')} ${file}`);
-      }
+      for (const file of modifiedFiles) console.log(`\t${chalk.red('modified:')}   ${file}`);
+      for (const file of deletedFiles) console.log(`\t${chalk.red('deleted:')}    ${file}`);
     }
 
-    if (untrackedItems.length > 0) {
-      console.log(`\n${chalk.red('Untracked files and directories:')}`);
+    if (untrackedFiles.length > 0) {
+      console.log(`\n${chalk.red('Untracked files:')}`);
       console.log(`  (use "${chalk.cyan('brch add')}" to include in what will be committed)`);
-      for (const item of untrackedItems) {
-        const suffix = item.type === 'directory' ? '/' : '';
-        console.log(`\t${item.name}${suffix}`);
+      for (const file of untrackedFiles) {
+        console.log(`\t${file}`);
       }
     }
 
-    if (modifiedFiles.length === 0 && untrackedItems.length === 0) {
+    if (stagedAdditions.length === 0 && stagedModifications.length === 0 && stagedDeletions.length === 0 &&
+      modifiedFiles.length === 0 && deletedFiles.length === 0 && untrackedFiles.length === 0) {
       console.log(chalk.green('nothing to commit, working tree clean'));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.log('Error getting status:', message);
-
     process.exit(1);
   }
 };
+

@@ -46,16 +46,13 @@ const getTrackedFiles = async (commitHash: string | null): Promise<Map<string, s
     const commitPath = path.join(OBJECTS_PATH, commitHash.substring(0, 2), commitHash.substring(2));
     const commitData = JSON.parse(await fs.readFile(commitPath, 'utf-8'));
 
-    if (commitData.tree) {
-      const treePath = path.join(OBJECTS_PATH, commitData.tree.substring(0, 2), commitData.tree.substring(2));
-      const treeData = JSON.parse(await fs.readFile(treePath, 'utf-8'));
-
-      for (const [file, hash] of Object.entries(treeData)) {
-        trackedFiles.set(file, hash as string);
+    if (commitData.files && Array.isArray(commitData.files)) {
+      for (const entry of commitData.files) {
+        trackedFiles.set(entry.path, entry.hash);
       }
     }
   } catch (error) {
-    // Tree data not found, return empty
+    // Commit data not found or invalid format
   }
 
   return trackedFiles;
@@ -83,7 +80,32 @@ const colorDiffLine = (line: string): string => {
   return line;
 };
 
-export const diff = async () => {
+const normalizeRelativePath = (pathValue: string): string => {
+  const normalized = pathValue.split('\\').join('/');
+  if (normalized && !normalized.startsWith('./') && !normalized.startsWith('../') && !normalized.startsWith('/')) {
+    return './' + normalized;
+  }
+  return normalized;
+};
+
+const walk = async (dir: string, repoRoot: string, ignorePatterns: string[]): Promise<string[]> => {
+  let files: string[] = [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const res = path.resolve(dir, entry.name);
+    if (entry.name === VCS_DIR || shouldIgnore(entry.name, ignorePatterns)) continue;
+
+    if (entry.isDirectory()) {
+      files = files.concat(await walk(res, repoRoot, ignorePatterns));
+    } else {
+      files.push(normalizeRelativePath(path.relative(repoRoot, res)));
+    }
+  }
+  return files;
+};
+
+export const diff = async (filePaths?: string[]) => {
   try {
     const currentHead = await getCurrentHead();
     const trackedFiles = await getTrackedFiles(currentHead);
@@ -94,35 +116,49 @@ export const diff = async () => {
       return;
     }
 
-    const workdir = process.cwd();
-    const entries = await fs.readdir(workdir, { withFileTypes: true });
+    const repoRoot = process.cwd();
+    let filesToCompare: string[] = [];
+
+    if (filePaths && filePaths.length > 0) {
+      for (const p of filePaths) {
+        const absolutePath = path.resolve(repoRoot, p);
+        try {
+          const stats = await fs.stat(absolutePath);
+          if (stats.isDirectory()) {
+            const dirFiles = await walk(absolutePath, repoRoot, ignorePatterns);
+            filesToCompare.push(...dirFiles);
+          } else {
+            const relativeToRoot = path.relative(repoRoot, absolutePath);
+            filesToCompare.push(normalizeRelativePath(relativeToRoot));
+          }
+        } catch (error) {
+          // File/directory doesn't exist, add it anyway to check if it was deleted (tracked)
+          const relativeToRoot = path.relative(repoRoot, absolutePath);
+          filesToCompare.push(normalizeRelativePath(relativeToRoot));
+        }
+      }
+      filesToCompare = [...new Set(filesToCompare)];
+    } else {
+      filesToCompare = await walk(repoRoot, repoRoot, ignorePatterns);
+    }
 
     let hasDiffs = false;
 
-    for (const entry of entries) {
-      // Skip VCS directory
-      if (entry.name === VCS_DIR) {
-        continue;
-      }
-
-      // Skip ignored files and folders
-      if (shouldIgnore(entry.name, ignorePatterns)) {
-        continue;
-      }
-
-      if (entry.isFile()) {
-        const filePath = path.join(workdir, entry.name);
-        const fileHash = hashContent(filePath);
-        const trackedHash = trackedFiles.get(entry.name);
+    for (const relPath of filesToCompare) {
+      try {
+        const fullPath = path.join(repoRoot, relPath);
+        const fileBuffer = await fs.readFile(fullPath);
+        const fileHash = hashContent(fileBuffer);
+        const trackedHash = trackedFiles.get(relPath);
 
         if (trackedHash && fileHash !== trackedHash) {
           // File has been modified
           const oldContent = await getFileContentFromHash(trackedHash);
-          const newContent = await fs.readFile(filePath, 'utf-8');
+          const newContent = fileBuffer.toString('utf-8');
 
           const patch = createTwoFilesPatch(
-            `a/${entry.name}`,
-            `b/${entry.name}`,
+            `a/${relPath}`,
+            `b/${relPath}`,
             oldContent,
             newContent,
             'HEAD',
@@ -137,6 +173,10 @@ export const diff = async () => {
           console.log(''); // Empty line between files
           hasDiffs = true;
         }
+      } catch (error) {
+        // File might not exist or be unreadable, skip it
+        // If it was specifically requested, we might want to show it's missing
+        // but for now we follow the existing pattern of modifications only.
       }
     }
 

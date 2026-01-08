@@ -14,10 +14,11 @@ program
 Examples:
   $ brch init                    Initialize a new repository
   $ brch add .                   Stage all files in current directory
-  $ brch add file1.txt file2.js  Stage specific files
-  $ brch commit -m "Initial commit"  Commit staged changes
+  $ brch status                  Show current repository status
+  $ brch commit -m "Commit msg"  Commit staged changes
+  $ brch log                     Show commit history
+  $ brch diff                    Show changes in working tree
   $ brch config set user.name "John Doe"  Set configuration
-  $ brch config set user.email "john@example.com" --global  Set global configuration
 
 For more information about a specific command, use:
   $ brch <command> --help

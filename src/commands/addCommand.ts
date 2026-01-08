@@ -29,10 +29,14 @@ commit will be skipped. Only files that exist and have been modified will be sta
         staged.forEach((path) => console.log(chalk.green(' - ') + path));
       }
 
+      console.log();
+
       if (skipped.length > 0) {
         console.log(chalk.yellow('Skipped (unchanged or not found):'));
         skipped.forEach((path) => console.log(chalk.yellow(' - ') + path));
       }
+
+      console.log();
 
       if (staged.length === 0 && skipped.length === 0) {
         console.log(chalk.yellow('Nothing to add.'));
